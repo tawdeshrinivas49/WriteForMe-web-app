@@ -85,6 +85,7 @@ enum FeedbackCategory {
 // ==========================================
 
 model User {
+<<<<<<< HEAD
   id                  String   @id @default(uuid())
   phone               String   @unique
   name                String
@@ -106,6 +107,25 @@ model User {
 }
 
 
+=======
+  id              String   @id @default(uuid())
+  phone           String   @unique
+  name            String
+  gender          Gender
+  role            Role
+  profileImageUrl String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  candidateProfile CandidateProfile?
+  volunteerProfile VolunteerProfile?
+  organizationId   String?
+  organization     Organization?    @relation(fields: [organizationId], references: [id])
+  platformFeedbacks PlatformFeedback[]
+}
+
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
 model CandidateProfile {
   id              String             @id @default(uuid())
   userId          String             @unique
@@ -273,6 +293,7 @@ model MasterExam {
   requests  ExamRequest[]
 
   createdAt DateTime      @default(now())
+<<<<<<< HEAD
 }
 
 model AuthSession {
@@ -282,4 +303,6 @@ model AuthSession {
   role         String   // "CANDIDATE" or "VOLUNTEER"
   expiresAt    DateTime
   createdAt    DateTime @default(now())
+=======
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
 }

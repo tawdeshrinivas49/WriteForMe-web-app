@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // backend/src/modules/auth/auth.service.js
 const prisma = require('../../config/database');
 const jwt = require('jsonwebtoken');
@@ -38,6 +39,37 @@ exports.processDigiLockerLogin = async (digiLockerPayload, role, extraProfileDat
         { phone }
       ]
     },
+=======
+// DigiLocker & JWT logic
+const prisma = require('../../config/database');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_writeforme_key';
+
+exports.processDigiLockerLogin = async (digiLockerPayload) => {
+  const { 
+    phone, 
+    name, 
+    gender, 
+    role, 
+    hasFreshAcademicRecords,
+    // Optional profile fields passed during signup/mocking
+    udidNumber,
+    disabilityType,
+    homeLat,
+    homeLng,
+    highestEducation,
+    stream,
+    hasVehicle,
+    vehicleType,
+    lastLat,
+    lastLng
+  } = digiLockerPayload;
+
+  // 1. Fetch user with linked candidate and volunteer profiles
+  let user = await prisma.user.findUnique({ 
+    where: { phone },
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
     include: {
       candidateProfile: true,
       volunteerProfile: true
@@ -47,6 +79,7 @@ exports.processDigiLockerLogin = async (digiLockerPayload, role, extraProfileDat
   // 2. If user doesn't exist, create user + role-specific profile
   if (!user) {
     user = await prisma.user.create({
+<<<<<<< HEAD
       data: {
         phone,
         name,
@@ -54,12 +87,16 @@ exports.processDigiLockerLogin = async (digiLockerPayload, role, extraProfileDat
         role: normalizedRole,   // now always STUDENT or VOLUNTEER
         digilockerIdHash
       },
+=======
+      data: { phone, name, gender, role },
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
       include: {
         candidateProfile: true,
         volunteerProfile: true
       }
     });
 
+<<<<<<< HEAD
     // Create role-specific profile
     if (normalizedRole === 'STUDENT') {
       const candidateProfile = await prisma.candidateProfile.create({
@@ -88,10 +125,40 @@ exports.processDigiLockerLogin = async (digiLockerPayload, role, extraProfileDat
           vehicleType: extraProfileData.vehicleType || 'NONE',
           lastLat: extraProfileData.lastLat ? parseFloat(extraProfileData.lastLat) : 0.0,
           lastLng: extraProfileData.lastLng ? parseFloat(extraProfileData.lastLng) : 0.0
+=======
+    if (role === 'CANDIDATE' || role === 'STUDENT') {
+      const candidateProfile = await prisma.candidateProfile.create({
+        data: { 
+          userId: user.id,
+          udidNumber: udidNumber || null,
+          disabilityType: disabilityType || 'VISUAL_IMPAIRMENT',
+          homeLat: homeLat ? parseFloat(homeLat) : 0.0,
+          homeLng: homeLng ? parseFloat(homeLng) : 0.0
+        }
+      });
+      user.candidateProfile = candidateProfile;
+    } 
+    else if (role === 'VOLUNTEER') {
+      const verificationStatus = hasFreshAcademicRecords 
+        ? 'VERIFIED_DIGILOCKER' 
+        : 'PENDING_MANUAL_AUDIT';
+
+      const volunteerProfile = await prisma.volunteerProfile.create({
+        data: { 
+          userId: user.id,
+          eduVerified: verificationStatus,
+          highestEducation: highestEducation || 'BACHELORS',
+          stream: stream || null,
+          hasVehicle: hasVehicle || false,
+          vehicleType: vehicleType || 'NONE',
+          lastLat: lastLat ? parseFloat(lastLat) : 0.0,
+          lastLng: lastLng ? parseFloat(lastLng) : 0.0
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
         }
       });
       user.volunteerProfile = volunteerProfile;
     }
+<<<<<<< HEAD
   } else if (!user.digilockerIdHash) {
     // Update existing legacy user record with hashed DigiLocker ID
     user = await prisma.user.update({
@@ -113,6 +180,23 @@ exports.processDigiLockerLogin = async (digiLockerPayload, role, extraProfileDat
       volunteerProfileId
     },
     JWT_SECRET,
+=======
+  }
+
+  // 3. Extract profile IDs for seamless token payload authorization
+  const candidateProfileId = user.candidateProfile?.id || null;
+  const volunteerProfileId = user.volunteerProfile?.id || null;
+
+  // 4. Generate JWT Token with embedded profile references
+  const token = jwt.sign(
+    { 
+      userId: user.id, 
+      role: user.role,
+      candidateProfileId,
+      volunteerProfileId
+    }, 
+    JWT_SECRET, 
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
     { expiresIn: '7d' }
   );
 

@@ -1,4 +1,5 @@
 const userService = require('./user.service');
+<<<<<<< HEAD
 // backend/src/modules/users/user.controller.js
 const prisma = require('../../config/database');
 
@@ -103,6 +104,8 @@ exports.getVolunteerDashboard = async (req, res) => {
   }
 };
 
+=======
+>>>>>>> aed0f32cb472f7ec3be5eb17fa8a874a01fb61db
 
 // GET /api/v1/users/:userId
 exports.getUserProfile = async (req, res) => {
