@@ -7,6 +7,29 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/store/useUser";
 
+// Base links for all authenticated users
+const commonLinks = [
+  { to: "/dashboard", label: "Dashboard" },
+  { to: "/emergency", label: "Emergency" },
+  { to: "/community", label: "Community" },
+  { to: "/hall-of-fame", label: "Hall of Fame" },
+  { to: "/sitemap", label: "Sitemap" },
+];
+
+// Role‑specific links
+const roleLinks = {
+  STUDENT: [
+    { to: "/request", label: "Request" },
+    { to: "/match", label: "My Match" },
+  ],
+  VOLUNTEER: [
+    { to: "/matching", label: "Available Requests" }, // volunteers see open requests
+  ],
+  CONTRIBUTOR: [
+    { to: "/donate", label: "Donate" },
+  ],
+};
+
 const publicLinks = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About Us" },
@@ -17,23 +40,14 @@ const publicLinks = [
   { to: "/sitemap", label: "Sitemap" },
 ];
 
-const authenticatedLinks = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/request", label: "Request" },
-  { to: "/match", label: "My Match" },
-  { to: "/emergency", label: "Emergency" },
-  { to: "/community", label: "Community" },
-  { to: "/hall-of-fame", label: "Hall of Fame" },
-  { to: "/sitemap", label: "Sitemap" },
-];
-
 export const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, logout } = useUser();
-  const isLoggedIn = role !== null;
+  const { user, logout } = useUser();
+  const isLoggedIn = !!user;
+  const role = user?.role;
 
   const handleLogout = () => {
     logout();
@@ -46,7 +60,14 @@ export const Header = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const navLinks = isLoggedIn ? authenticatedLinks : publicLinks;
+  // Build navigation links based on role
+  const getNavLinks = () => {
+    if (!isLoggedIn) return publicLinks;
+    const roleSpecific = roleLinks[role as keyof typeof roleLinks] || [];
+    return [...commonLinks, ...roleSpecific];
+  };
+
+  const navLinks = getNavLinks();
 
   return (
     <header

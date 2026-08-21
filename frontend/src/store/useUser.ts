@@ -1,116 +1,127 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import apiClient from '@/lib/api';
+import { toast } from 'sonner';
 
-export type UserRole = "candidate" | "volunteer" | "contributor" | "admin" | null;
-
-export interface SessionReview {
+interface User {
   id: string;
-  date: string;
-  exam: string;
-  counterpart: string;
-  speed: number;
-  patience: number;
-  neatness: number;
-  politeness: number;
-  status: "completed" | "cancelled";
-}
-
-export interface MatchRequest {
-  needs: "scribe" | "transport" | "both";
-  examName: string;
-  examDate: string;
-  city: string;
-  admitCardName: string | null;
+  name: string;
+  email?: string;
+  phone?: string;
+  role: 'STUDENT' | 'VOLUNTEER' | 'ADMIN' | 'SUPER_ADMIN' | 'CONTRIBUTOR';
+  gender?: string;
+  aadhaarVerified?: boolean;
+  volunteerProfileId?: string | null;
+  candidateProfileId?: string | null;
+  // ... other fields
 }
 
 interface UserState {
-  role: UserRole;
-  name: string;
-  aadhaarVerified: boolean;
-  videoCompleted: boolean;
-  quizPassed: boolean;
-  request: MatchRequest | null;
-  matchFound: boolean;
-  sessionStarted: boolean;
-  sessionEnded: boolean;
-  history: SessionReview[];
-  login: (role: Exclude<UserRole, null>, name: string) => void;
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isFullyVerified: boolean;
+  aadhaarVerified: boolean; // computed from user
+  setUser: (user: User | null) => void;
+  setToken: (token: string | null) => void;
   logout: () => void;
-  setAadhaarVerified: (v: boolean) => void;
-  completeVideo: () => void;
-  passQuiz: () => void;
-  setRequest: (r: MatchRequest) => void;
-  clearRequest: () => void;
-  setMatchFound: (v: boolean) => void;
-  startSession: () => void;
-  endSession: () => void;
-  addHistory: (h: SessionReview) => void;
+  // Actions
+  login: (email: string, password: string) => Promise<void>;
+  signup: (data: any) => Promise<void>;
+  googleLogin: (credential: string) => Promise<void>;
+  digilockerLogin: (role: string) => void;
 }
-
-const seedHistory: SessionReview[] = [
-  {
-    id: "s-1",
-    date: "2026-05-18",
-    exam: "SSC CGL Tier I",
-    counterpart: "Meera Iyer",
-    speed: 5,
-    patience: 5,
-    neatness: 4,
-    politeness: 5,
-    status: "completed",
-  },
-  {
-    id: "s-2",
-    date: "2026-03-02",
-    exam: "State PSC Prelims",
-    counterpart: "Arjun Rao",
-    speed: 4,
-    patience: 5,
-    neatness: 5,
-    politeness: 5,
-    status: "completed",
-  },
-];
 
 export const useUser = create<UserState>()(
   persist(
-    (set) => ({
-      role: null,
-      name: "",
+    (set, get) => ({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isFullyVerified: false,
       aadhaarVerified: false,
-      videoCompleted: false,
-      quizPassed: false,
-      request: null,
-      matchFound: false,
-      sessionStarted: false,
-      sessionEnded: false,
-      history: seedHistory,
-      login: (role, name) => set({ role, name }),
-      logout: () =>
+
+      setUser: (user) => {
         set({
-          role: null,
-          name: "",
-          aadhaarVerified: false,
-          videoCompleted: false,
-          quizPassed: false,
-          request: null,
-          matchFound: false,
-          sessionStarted: false,
-          sessionEnded: false,
-        }),
-      setAadhaarVerified: (aadhaarVerified) => set({ aadhaarVerified }),
-      completeVideo: () => set({ videoCompleted: true }),
-      passQuiz: () => set({ quizPassed: true }),
-      setRequest: (request) => set({ request, matchFound: false }),
-      clearRequest: () => set({ request: null, matchFound: false, sessionStarted: false, sessionEnded: false }),
-      setMatchFound: (matchFound) => set({ matchFound }),
-      startSession: () => set({ sessionStarted: true }),
-      endSession: () => set({ sessionEnded: true }),
-      addHistory: (h) => set((s) => ({ history: [h, ...s.history] })),
+          user,
+          isAuthenticated: !!user,
+          isFullyVerified: !!user,
+          aadhaarVerified: !!user?.aadhaarVerified,
+        });
+      },
+      setToken: (token) => set({ token }),
+      logout: () => {
+        set({ user: null, token: null, isAuthenticated: false, isFullyVerified: false, aadhaarVerified: false });
+        localStorage.removeItem('jwtToken');
+        window.location.href = '/';
+      },
+
+      // ---------- Email/Password Login ----------
+      login: async (email: string, password: string) => {
+        try {
+          const response = await apiClient.post('/auth/login', { email, password });
+          const { token, user } = response.data;
+          set({ token, user, isAuthenticated: true, isFullyVerified: true, aadhaarVerified: user.aadhaarVerified });
+          localStorage.setItem('jwtToken', token);
+          toast.success('Logged in successfully');
+        } catch (error: any) {
+          toast.error(error.response?.data?.error || 'Login failed');
+          throw error;
+        }
+      },
+
+      // ---------- Signup (full details + DigiLocker) ----------
+      signup: async (data: any) => {
+        // data contains all fields from the signup form, including role, name, email, password, etc.
+        try {
+          const response = await apiClient.post('/auth/signup', data);
+          // If signup is successful but requires DigiLocker verification, backend returns a redirect URL
+          if (response.data.redirectUrl) {
+            // Store signup data in session storage for later callback
+            sessionStorage.setItem('signupData', JSON.stringify(data));
+            window.location.href = response.data.redirectUrl;
+          } else {
+            // If no DigiLocker required (e.g., contributor), auto-login
+            const { token, user } = response.data;
+            set({ token, user, isAuthenticated: true, isFullyVerified: true, aadhaarVerified: user.aadhaarVerified });
+            localStorage.setItem('jwtToken', token);
+            toast.success('Account created!');
+          }
+        } catch (error: any) {
+          toast.error(error.response?.data?.error || 'Signup failed');
+          throw error;
+        }
+      },
+
+      // ---------- Google Login ----------
+      googleLogin: async (credential: string) => {
+        try {
+          const response = await apiClient.post('/auth/google', { credential });
+          const { token, user } = response.data;
+          set({ token, user, isAuthenticated: true, isFullyVerified: true, aadhaarVerified: user.aadhaarVerified });
+          localStorage.setItem('jwtToken', token);
+          toast.success('Logged in with Google');
+        } catch (error: any) {
+          toast.error(error.response?.data?.error || 'Google login failed');
+          throw error;
+        }
+      },
+
+      // ---------- DigiLocker Login (initiate) ----------
+      digilockerLogin: (role: string) => {
+        // Redirect to backend to initiate DigiLocker flow
+        window.location.href = `${import.meta.env.VITE_API_BASE_URL}/auth/digilocker/initiate?role=${role}`;
+      },
     }),
-    { name: "wfm-user" }
+    {
+      name: 'user-storage',
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+        isFullyVerified: state.isFullyVerified,
+        aadhaarVerified: state.aadhaarVerified,
+      }),
+    }
   )
 );
-
-export const isFullyVerified = (s: UserState) =>
-  s.role === "volunteer" ? s.videoCompleted && s.quizPassed : s.videoCompleted;

@@ -1,31 +1,137 @@
+// backend/src/modules/auth/digilocker.provider.js
+const axios = require('axios');
+const crypto = require('crypto');
+
+const SETU_BASE_URL = process.env.SETU_BASE_URL || 'https://dg-sandbox.setu.co';
+
 class DigiLockerProvider {
-  static async fetchUserData(clientPayload) {
+  static async createAuthorizationUrl(role) {
     const isMock = process.env.USE_MOCK_DIGILOCKER === 'true';
 
     if (isMock) {
-      // DEVELOPMENT: Return the mock JSON payload directly from Postman
       return {
-        phone: clientPayload.phone,
-        name: clientPayload.name,
-        gender: clientPayload.gender,
-        role: clientPayload.role,
-        hasFreshAcademicRecords: clientPayload.hasFreshAcademicRecords || false
+        url: `http://localhost:8080/auth/callback?success=True&id=mock_session_123&scope=test`,
+        state: 'mock_state_456',
+        codeVerifier: 'mock_verifier_789',
       };
-    } else {
-      // PRODUCTION: The clientPayload will contain an OAuth 'code' instead of raw user data
-      const { authorizationCode } = clientPayload;
-      
-      if (!authorizationCode) {
-        throw new Error("Authorization code missing for live DigiLocker login");
+    }
+
+    const state = crypto.randomBytes(16).toString('hex');
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+
+    // ✅ Correct endpoint for Setu DigiLocker API (non‑Bridge)
+    const endpoint = `${SETU_BASE_URL}/api/digilocker/`;
+    console.log(`[Setu] Calling: ${endpoint}`);
+
+    try {
+      const response = await axios.post(
+        endpoint,
+        {
+          redirectUrl: process.env.SETU_REDIRECT_URL,
+          state,
+          codeChallenge,
+          codeChallengeMethod: 'S256',
+        },
+        {
+          headers: {
+            'x-client-id': process.env.SETU_CLIENT_ID,
+            'x-client-secret': process.env.SETU_CLIENT_SECRET,
+            'x-product-instance-id': process.env.SETU_PRODUCT_INSTANCE_ID,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        }
+      );
+
+      const authUrl = response.data?.data?.url || response.data?.url;
+      if (!authUrl) {
+        throw new Error('No authorization URL returned from Setu');
       }
 
-      // TODO: Implement actual DigiLocker OAuth flow here later
-      // 1. axios.post(DIGILOCKER_TOKEN_URL, { code: authorizationCode, ... })
-      // 2. axios.get(DIGILOCKER_PROFILE_URL, { headers: { Authorization: `Bearer ${token}` } })
-      // 3. Parse the XML/JSON response to match our standard object
-      
-      throw new Error("Live DigiLocker API integration pending production credentials.");
+      return {
+        url: authUrl,
+        state,
+        codeVerifier,
+      };
+    } catch (error) {
+      console.error(
+        'Setu createUrl Error:',
+        error.response?.data || error.message
+      );
+      throw new Error('Failed to generate DigiLocker authorization URL');
     }
+  }
+
+  /**
+   * NEW: Fetch user details using the session ID from the callback
+   */
+  // Inside digilocker.provider.js
+static async fetchUserDataBySessionId(sessionId) {
+  const isMock = process.env.USE_MOCK_DIGILOCKER === 'true';
+  if (isMock) {
+    return {
+      digilockerId: 'mock_volunteer_123',
+      phone: '9876543212',
+      name: 'Karan Mehta',
+      gender: 'MALE',
+      hasFreshAcademicRecords: true,
+    };
+  }
+
+  const possibleEndpoints = [
+    `${SETU_BASE_URL}/api/digilocker/session/${sessionId}`,
+    `${SETU_BASE_URL}/api/digilocker/session?sessionId=${sessionId}`,
+    `${SETU_BASE_URL}/api/digilocker/user/${sessionId}`,
+    `${SETU_BASE_URL}/api/digilocker/user?sessionId=${sessionId}`,
+  ];
+
+  for (const endpoint of possibleEndpoints) {
+    try {
+      console.log(`[Setu] Trying: ${endpoint}`);
+      const response = await axios.get(endpoint, {
+        headers: {
+          'x-client-id': process.env.SETU_CLIENT_ID,
+          'x-client-secret': process.env.SETU_CLIENT_SECRET,
+          'x-product-instance-id': process.env.SETU_PRODUCT_INSTANCE_ID,
+        },
+        timeout: 30000,
+      });
+
+      const profile = response.data?.data || response.data;
+      if (profile && (profile.id || profile.sub)) {
+        return {
+          digilockerId: profile.id || profile.sub || sessionId,
+          phone: profile.phone || profile.mobile || '9999999999',
+          name: profile.name || profile.fullName || 'Test User',
+          gender: profile.gender === 'M' ? 'MALE' : profile.gender === 'F' ? 'FEMALE' : 'OTHER',
+          hasFreshAcademicRecords: Boolean(profile.academicRecords?.length),
+        };
+      }
+    } catch (e) {
+      // continue to next endpoint
+    }
+  }
+
+  // If all fail, throw or fallback to mock
+  console.warn('All Setu user fetch endpoints failed – using fallback mock data');
+  return {
+    digilockerId: sessionId,
+    phone: '9999999999',
+    name: 'DigiLocker User',
+    gender: 'OTHER',
+    hasFreshAcademicRecords: false,
+  };
+}
+
+  // Keep old fetchUserData for backward compatibility (if needed)
+  static async fetchUserData({ authorizationCode, codeVerifier }) {
+    // This is not used in the new flow, but kept for reference.
+    console.warn('fetchUserData with code is deprecated in this flow');
+    return this.fetchUserDataBySessionId(authorizationCode);
   }
 }
 

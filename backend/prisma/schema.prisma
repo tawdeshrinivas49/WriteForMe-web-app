@@ -85,22 +85,32 @@ enum FeedbackCategory {
 // ==========================================
 
 model User {
-  id              String   @id @default(uuid())
-  phone           String   @unique
-  name            String
-  gender          Gender
-  role            Role
-  profileImageUrl String?
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  phone               String   @unique
+  name                String
+  gender              Gender
+  role                Role
+  profileImageUrl     String?
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  candidateProfile CandidateProfile?
-  volunteerProfile VolunteerProfile?
-  organizationId   String?
-  organization     Organization?    @relation(fields: [organizationId], references: [id])
-  platformFeedbacks PlatformFeedback[]
+  email          String?   @unique
+  password       String?   // hashed password
+  address        String?
+  preferredLanguage String?
+  googleId       String?   @unique
+
+  // ✅ NEW: Store hashed DigiLocker ID
+  digilockerIdHash    String?  @unique   // make it optional initially
+
+  candidateProfile    CandidateProfile?
+  volunteerProfile    VolunteerProfile?
+  organizationId      String?
+  organization        Organization?    @relation(fields: [organizationId], references: [id])
+  platformFeedbacks   PlatformFeedback[]
 }
+
 
 model CandidateProfile {
   id              String             @id @default(uuid())
@@ -269,4 +279,15 @@ model MasterExam {
   requests  ExamRequest[]
 
   createdAt DateTime      @default(now())
+}
+
+model AuthSession {
+  id           String   @id @default(uuid())
+  state        String   @unique
+  codeVerifier String
+  role         String   // "CANDIDATE" or "VOLUNTEER"
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  metadata Json? // store { email, role, name, etc }
+
 }

@@ -1,29 +1,28 @@
-const prisma = require('../../config/database');
-const { calculateDistanceKm, estimateTravelTimeMinutes } = require('../../config/mapmyindia');
+const prisma = require("../../config/database");
+const {
+  calculateDistanceKm,
+  estimateTravelTimeMinutes,
+} = require("../../config/mapmyindia");
 
-// Map educational qualifications to numerical ranks for eligibility checks
+// Edu rank map – kept for when you uncomment the education filter
 const EDU_RANK = {
-  'BELOW_10TH': 1,
-  '10TH': 2,
-  'SECONDARY': 2,
-  '12TH': 3,
-  'HIGHER_SECONDARY': 3,
-  'DIPLOMA': 3,
-  'BACHELORS': 4,
-  'UNDERGRADUATE': 4,
-  'GRADUATION': 4,
-  'MASTERS': 5,
-  'POSTGRADUATE': 5,
-  'DOCTORATE': 6,
-  'PHD': 6,
+  BELOW_10TH: 1,
+  "10TH": 2,
+  SECONDARY: 2,
+  "12TH": 3,
+  HIGHER_SECONDARY: 3,
+  DIPLOMA: 3,
+  BACHELORS: 4,
+  UNDERGRADUATE: 4,
+  GRADUATION: 4,
+  MASTERS: 5,
+  POSTGRADUATE: 5,
+  DOCTORATE: 6,
+  PHD: 6,
 };
 
 class MatchingService {
-  /**
-   * 1. Find and rank eligible volunteers near an exam request using PostGIS + MapMyIndia ETA Engine
-   */
   static async findVolunteersForRequest(requestId, radiusKm = 10) {
-    // 1. Fetch the Exam Request along with candidate details
     const request = await prisma.examRequest.findUnique({
       where: { id: requestId },
       include: {
@@ -38,29 +37,30 @@ class MatchingService {
       throw new Error(`Exam request with ID '${requestId}' not found.`);
     }
 
-    // Determine target exam qualification level & stream
-    const targetExamLevel =
-      request.masterExam?.requiredQualification || request.examLevel || 'BACHELORS';
-    const targetExamStream =
-      request.masterExam?.stream || request.stream || request.candidate?.stream || null;
+    // ========== FILTERS – COMMENTED OUT FOR NOW ==========
+    // const targetExamLevel = request.masterExam?.requiredQualification || request.examLevel || 'BACHELORS';
+    // const targetExamStream = request.masterExam?.stream || request.stream || request.candidate?.stream || null;
 
-    // 2. Determine Search Anchor Coordinates & Transport Strategy
     let searchLat, searchLng;
-    let transportStrategy = '';
+    let transportStrategy = "";
 
     if (request.requiresTransport && request.pickupLat && request.pickupLng) {
       searchLat = parseFloat(request.pickupLat);
       searchLng = parseFloat(request.pickupLng);
-      transportStrategy = 'PICKUP_ANCHORED_SEARCH';
+      transportStrategy = "PICKUP_ANCHORED_SEARCH";
     } else {
       searchLat = parseFloat(request.examCenterLat || request.lat || 0.0);
       searchLng = parseFloat(request.examCenterLng || request.lng || 0.0);
-      transportStrategy = 'CENTER_ANCHORED_SEARCH';
+      transportStrategy = "CENTER_ANCHORED_SEARCH";
     }
 
     const radiusMeters = radiusKm * 1000;
 
-    // 3. Raw PostGIS Query to fetch candidates within geospatial radius
+    // ========== GEOFILTERING – COMMENTED OUT ==========
+    // Use a large radius to bypass geofiltering for testing
+    // const effectiveRadius = process.env.ENABLE_GEOFILTERING === 'true' ? radiusMeters : 1000000; // 1000km
+    const effectiveRadius = radiusMeters; // keep as is – volunteers outside radius won't show
+
     const candidates = await prisma.$queryRaw`
       SELECT 
         vp.id AS "volunteerId",
@@ -71,7 +71,6 @@ class MatchingService {
         vp."hasVehicle",
         vp."vehicleType",
         vp."highestEducation",
-        vp."stream" AS "volunteerStream",
         vp."maxExamLevelAllowed",
         vp."averageRating",
         vp."lastLat" AS "lastLat",
@@ -89,54 +88,43 @@ class MatchingService {
         AND ST_DistanceSphere(
           vp.location, 
           ST_SetSRID(ST_MakePoint(${searchLng}, ${searchLat}), 4326)
-        ) <= ${radiusMeters}
+        ) <= ${effectiveRadius}
       ORDER BY "distanceKm" ASC;
     `;
 
-    // 4. Multi-Layer Filtering & Travel Time Augmentation
     const filteredVolunteers = candidates
       .filter((vol) => {
-        // --- CONSTRAINT 1: Gender Filter ---
-        if (request.genderPref === 'FEMALE_ONLY' && vol.gender !== 'FEMALE') return false;
-        if (request.genderPref === 'MALE_ONLY' && vol.gender !== 'MALE') return false;
-
-        // --- CONSTRAINT 2: Lower Education Level Check ---
-        // Scribe must have an educational qualification strictly lower than the exam level
-        const volEduRank = EDU_RANK[vol.highestEducation?.toUpperCase()] || 4;
-        const examEduRank = EDU_RANK[targetExamLevel.toUpperCase()] || 4;
-
-        if (volEduRank >= examEduRank) {
+        // ========== GENDER FILTER (ACTIVE) ==========
+        if (request.genderPref === "FEMALE_ONLY" && vol.gender !== "FEMALE")
           return false;
-        }
-
-        // --- CONSTRAINT 3: Stream Disconnect Filter ---
-        // Prevents subject bias / unfair advantage
-        if (
-          targetExamStream &&
-          vol.volunteerStream &&
-          vol.volunteerStream.toUpperCase() === targetExamStream.toUpperCase()
-        ) {
+        if (request.genderPref === "MALE_ONLY" && vol.gender !== "MALE")
           return false;
-        }
+
+        // ========== EDUCATION FILTER – COMMENTED OUT ==========
+        // const volEduRank = EDU_RANK[vol.highestEducation?.toUpperCase()] || 4;
+        // const examEduRank = EDU_RANK[targetExamLevel.toUpperCase()] || 4;
+        // if (volEduRank >= examEduRank) return false;
+
+        // ========== STREAM DISCONNECT – COMMENTED OUT ==========
+        // if (targetExamStream && vol.volunteerStream && vol.volunteerStream.toUpperCase() === targetExamStream.toUpperCase()) {
+        //   return false;
+        // }
 
         return true;
       })
       .map((vol) => {
-        // Compute precise distance fallback if DB spatial distance was truncated
         const distanceKm =
           parseFloat(vol.distanceKm) ||
           calculateDistanceKm(searchLat, searchLng, vol.lastLat, vol.lastLng);
 
-        // Calculate travel ETA in minutes using MapMyIndia routing logic
         const etaMinutes = estimateTravelTimeMinutes(distanceKm);
 
-        // Transportation Action Classification
-        let transportAction = 'STANDARD_COMMUTE';
+        let transportAction = "STANDARD_COMMUTE";
         if (request.requiresTransport) {
           if (vol.hasVehicle) {
-            transportAction = 'DIRECT_VOLUNTEER_RIDE';
+            transportAction = "DIRECT_VOLUNTEER_RIDE";
           } else {
-            transportAction = 'TRIGGER_THIRD_PARTY_RIDE';
+            transportAction = "TRIGGER_THIRD_PARTY_RIDE";
           }
         }
 
@@ -149,7 +137,6 @@ class MatchingService {
           hasVehicle: vol.hasVehicle,
           vehicleType: vol.vehicleType,
           highestEducation: vol.highestEducation,
-          volunteerStream: vol.volunteerStream,
           averageRating: parseFloat(vol.averageRating || 5.0),
           distanceKm,
           etaMinutes,
@@ -163,42 +150,120 @@ class MatchingService {
       searchCenter: { lat: searchLat, lng: searchLng, radiusKm },
       appliedFilters: {
         genderPref: request.genderPref,
-        targetExamLevel,
-        targetExamStream: targetExamStream || 'ANY / UNRESTRICTED',
-        streamDisconnectEnforced: Boolean(targetExamStream),
+        // targetExamLevel, // commented out
+        // targetExamStream, // commented out
       },
       totalEligibleFound: filteredVolunteers.length,
       volunteers: filteredVolunteers,
     };
   }
 
-  /**
-   * 2. Confirm and Assign a Volunteer to an Exam Request
-   */
-  static async assignVolunteerToRequest(requestId, volunteerId) {
+static async assignVolunteerToRequest(requestId, volunteerId) {
+  // ---- Check if volunteer already has an active assignment ----
+  const active = await prisma.examRequest.findFirst({
+    where: {
+      volunteerId: volunteerId,
+      status: { in: ['MATCHED', 'IN_PERSON_VERIFIED', 'IN_PROGRESS'] }
+    }
+  });
+  if (active) {
+    throw new Error('You already have an active assignment. Please complete it before accepting another.');
+  }
+
+  const volunteer = await prisma.volunteerProfile.findUnique({
+    where: { id: volunteerId },
+    include: { user: { select: { name: true, phone: true } } },
+  });
+
+  if (!volunteer) {
+    throw new Error(`Volunteer profile with ID '${volunteerId}' not found.`);
+  }
+
+  const updatedRequest = await prisma.examRequest.update({
+    where: { id: requestId },
+    data: {
+      volunteerId: volunteer.id,
+      status: 'MATCHED',
+    },
+    include: {
+      volunteer: { include: { user: true } },
+      candidate: { include: { user: true } },
+    },
+  });
+
+  return updatedRequest;
+}
+
+  // Inside MatchingService class
+  static async findEligibleRequestsForVolunteer(volunteerId, radiusKm = 10) {
+
+    const activeRequest = await prisma.examRequest.findFirst({
+    where: {
+      volunteerId: volunteerId,
+      status: { in: ['MATCHED', 'IN_PERSON_VERIFIED', 'IN_PROGRESS'] }
+    }
+  });
+  
+  if (activeRequest) {
+    // Volunteer is busy – return no requests
+    return [];
+  }
     const volunteer = await prisma.volunteerProfile.findUnique({
       where: { id: volunteerId },
-      include: { user: { select: { name: true, phone: true } } },
+      include: { user: true },
     });
 
     if (!volunteer) {
-      throw new Error(`Volunteer profile with ID '${volunteerId}' not found.`);
+      throw new Error("Volunteer profile not found");
     }
 
-    const updatedRequest = await prisma.examRequest.update({
-      where: { id: requestId },
-      data: {
-        volunteerId: volunteer.id,
-        status: 'MATCHED',
-      },
+    const volLat = volunteer.lastLat ?? 0.0;
+    const volLng = volunteer.lastLng ?? 0.0;
+    const volGender = volunteer.user.gender;
+    const volEdu = volunteer.highestEducation || "BACHELORS";
+    const volEduRank = EDU_RANK[volEdu.toUpperCase()] || 4;
+
+    const requests = await prisma.examRequest.findMany({
+      where: { status: "CREATED" },
       include: {
-        volunteer: { include: { user: true } },
         candidate: { include: { user: true } },
       },
     });
 
-    return updatedRequest;
+    const eligible = [];
+    for (const req of requests) {
+      const reqLat = req.examCenterLat ?? 0.0;
+      const reqLng = req.examCenterLng ?? 0.0;
+      let distanceKm = 0;
+      if (reqLat && reqLng && volLat && volLng) {
+        distanceKm = calculateDistanceKm(volLat, volLng, reqLat, reqLng);
+      }
+
+      // Gender filter (active)
+      if (req.genderPref === "FEMALE_ONLY" && volGender !== "FEMALE") continue;
+      if (req.genderPref === "MALE_ONLY" && volGender !== "MALE") continue;
+
+      // Education filter – commented out
+      // const reqExamLevel = req.masterExam?.requiredQualification || req.examLevel || 'BACHELORS';
+      // const reqEduRank = EDU_RANK[reqExamLevel.toUpperCase()] || 4;
+      // if (volEduRank >= reqEduRank) continue;
+
+      // Geofiltering – commented out (only if you want to filter by distance)
+      // if (distanceKm > radiusKm) continue;
+
+      eligible.push({
+        ...req,
+        distanceKm,
+        candidateName: req.candidate?.user?.name || "Unknown",
+        candidatePhone: req.candidate?.user?.phone || "—",
+      });
+    }
+
+    eligible.sort((a, b) => a.distanceKm - b.distanceKm);
+    return eligible;
   }
 }
 
 module.exports = MatchingService;
+
+// changes are necessary in this as degraded for foundational working

@@ -19,8 +19,17 @@ exports.authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
 
+    // Use decoded.id (not userId) because we set id in the token
+    const userId = decoded.id || decoded.userId; // fallback
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token payload.',
+      });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: userId },
       select: {
         id: true,
         phone: true,

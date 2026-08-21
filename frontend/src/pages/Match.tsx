@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -9,98 +9,185 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@/store/useUser";
 import { toast } from "sonner";
+import { getRequestById, getRequests, verifyStartPin, verifyCompletionPin } from "@/lib/api";
 import {
-  Phone, Mail, MapPin, Languages, GraduationCap, Star, ShieldCheck,
-  KeyRound, LifeBuoy, CheckCircle2,
+  Phone, MapPin, GraduationCap, ShieldCheck,
+  KeyRound, LifeBuoy, CheckCircle2, Loader2, Clock
 } from "lucide-react";
 
-const criteria = ["speed", "patience", "neatness", "politeness"] as const;
-
-function Stars({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex gap-1">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <button key={i} type="button" onClick={() => onChange(i)} aria-label={`${i} stars`}>
-          <Star className={`w-6 h-6 ${i <= value ? "fill-amber-400 text-amber-400" : "text-muted"}`} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 const Match = () => {
-  const { role, request, matchFound, sessionStarted, sessionEnded, startSession, endSession, addHistory } = useUser();
-  const isVolunteer = role === "volunteer";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestIdFromUrl = searchParams.get("requestId");
+  const { user, token } = useUser();
+  const navigate = useNavigate();
 
-  const person = isVolunteer
-    ? {
-        name: "Aarav Nair",
-        role: "Candidate · Visual impairment (100%)",
-        detail: "B.Com Graduate",
-        languages: "English, Hindi, Malayalam",
-        area: "Kothrud, Pune · 3.2 km away",
-        phone: "+91 98200 41122",
-        email: "aarav.n@example.com",
-        score: 4.9,
+  const [loading, setLoading] = useState(true);
+  const [request, setRequest] = useState<any>(null);
+  const [startPinInput, setStartPinInput] = useState("");
+  const [endPinInput, setEndPinInput] = useState("");
+  const [verifyingStart, setVerifyingStart] = useState(false);
+  const [verifyingEnd, setVerifyingEnd] = useState(false);
+  const [fetchingId, setFetchingId] = useState(false);
+
+  // Fetch the active request ID if none in URL
+  useEffect(() => {
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    const findActiveRequest = async () => {
+      if (requestIdFromUrl) {
+        fetchRequest(requestIdFromUrl);
+        return;
       }
-    : {
-        name: "Meera Iyer",
-        role: "Verified Scribe · 46 sessions",
-        detail: "B.Sc. Student (below candidate's qualification)",
-        languages: "English, Hindi, Marathi",
-        area: "Kothrud, Pune · 3.2 km away",
-        phone: "+91 98200 55231",
-        email: "meera.i@example.com",
-        score: 4.8,
-      };
 
-  const [startOtp, setStartOtp] = useState("");
-  const [endOtp, setEndOtp] = useState("");
-  const [ratings, setRatings] = useState<Record<string, number>>({});
-  const [reviewed, setReviewed] = useState(false);
+      try {
+        setFetchingId(true);
+        const response = await getRequests();
+        const requests = response.data || [];
 
-  const candidateStartOtp = "482913";
-  const candidateEndOtp = "735204";
+        if (requests.length === 0) {
+          toast.info("You haven't created any requests yet.");
+          navigate('/request');
+          return;
+        }
 
-  const submitReview = () => {
-    addHistory({
-      id: `s-${Date.now()}`,
-      date: request?.examDate || new Date().toISOString().slice(0, 10),
-      exam: request?.examName || "Exam session",
-      counterpart: person.name,
-      speed: ratings.speed ?? 0,
-      patience: ratings.patience ?? 0,
-      neatness: ratings.neatness ?? 0,
-      politeness: ratings.politeness ?? 0,
-      status: "completed",
-    });
-    setReviewed(true);
-    toast.success("Review submitted — trust score updated");
+        // Find the first request that is not CANCELLED or COMPLETED
+        let active = requests.find(
+          (r: any) => !['CANCELLED', 'COMPLETED'].includes(r.status)
+        );
+        if (!active) {
+          active = requests[0];
+        }
+
+        setSearchParams({ requestId: active.id });
+        setFetchingId(false);
+      } catch (error) {
+        console.error("Error fetching requests:", error);
+        toast.error("Could not find your requests.");
+        navigate('/dashboard');
+      } finally {
+        setFetchingId(false);
+      }
+    };
+
+    findActiveRequest();
+  }, [requestIdFromUrl, token, navigate, setSearchParams]);
+
+  const fetchRequest = async (id: string) => {
+    try {
+      setLoading(true);
+      const response = await getRequestById(id);
+      setRequest(response.data);
+    } catch (error) {
+      console.error("Error fetching request:", error);
+      toast.error("Failed to load match details.");
+      navigate('/dashboard');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (!matchFound) {
+  useEffect(() => {
+    if (requestIdFromUrl) {
+      fetchRequest(requestIdFromUrl);
+    }
+  }, [requestIdFromUrl]);
+
+  const handleStartPinVerify = async () => {
+    if (!startPinInput || startPinInput.length < 4) {
+      toast.error("Please enter a valid start PIN");
+      return;
+    }
+    setVerifyingStart(true);
+    try {
+      const result = await verifyStartPin(requestIdFromUrl!, startPinInput);
+      if (result.success) {
+        toast.success("Session started successfully!");
+        const updated = await getRequestById(requestIdFromUrl!);
+        setRequest(updated.data);
+        setStartPinInput("");
+      } else {
+        toast.error(result.error || "Invalid start PIN");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to verify start PIN");
+    } finally {
+      setVerifyingStart(false);
+    }
+  };
+
+  const handleEndPinVerify = async () => {
+    if (!endPinInput || endPinInput.length < 4) {
+      toast.error("Please enter a valid end PIN");
+      return;
+    }
+    setVerifyingEnd(true);
+    try {
+      const result = await verifyCompletionPin(requestIdFromUrl!, endPinInput);
+      if (result.success) {
+        toast.success("Exam completed successfully!");
+        const updated = await getRequestById(requestIdFromUrl!);
+        setRequest(updated.data);
+        setEndPinInput("");
+      } else {
+        toast.error(result.error || "Invalid end PIN");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to verify end PIN");
+    } finally {
+      setVerifyingEnd(false);
+    }
+  };
+
+  if (fetchingId || loading) {
     return (
       <Layout>
-        <section className="py-24 container-narrow text-center">
-          <h1 className="text-3xl font-display font-bold mb-4">No active match</h1>
-          <p className="text-muted-foreground mb-8">Submit a request and we will pair you with a verified partner.</p>
-          <Button asChild><Link to="/request">Start a request</Link></Button>
-        </section>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-teal" />
+        </div>
       </Layout>
     );
   }
+
+  if (!request) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No request found.</p>
+          <Button onClick={() => navigate('/request')} className="mt-4">Create a Request</Button>
+        </div>
+      </Layout>
+    );
+  }
+
+  const isVolunteer = user?.role === "VOLUNTEER";
+  const isCandidate = user?.role === "STUDENT";
+  const status = request.status;
+  const isMatched = status === 'MATCHED' || status === 'IN_PERSON_VERIFIED' || status === 'IN_PROGRESS' || status === 'COMPLETED';
+  
+  const counterpart = isMatched ? (isVolunteer ? request.candidate?.user : request.volunteer?.user) : null;
+  const counterpartName = counterpart?.name || (isMatched ? "Unknown" : "Not yet matched");
+  const counterpartPhone = counterpart?.phone || "—";
+  const counterpartGender = counterpart?.gender || "—";
+
+  // Show PIN entry for both volunteer and candidate when status is MATCHED or IN_PROGRESS
+  const showPinEntry = (isVolunteer || isCandidate) && (status === 'MATCHED' || status === 'IN_PROGRESS');
+  // Show PINs (the actual codes) only to candidate
+  const showPins = isCandidate && status !== 'COMPLETED' && status !== 'CANCELLED';
 
   return (
     <Layout>
       <section className="py-16 md:py-20 container-wide">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
           <div className="mb-8">
-            <span className="section-label mb-4">Matched</span>
+            <span className="section-label mb-4">My Request</span>
             <h1 className="text-3xl md:text-4xl font-display font-bold mt-4">
-              You have been matched with {person.name}
+              {isMatched ? `Matched with ${counterpartName}` : "Waiting for a match"}
             </h1>
             <p className="text-muted-foreground mt-3">
-              Full details are now unlocked for both sides. Contact them to confirm the plan.
+              Status: <Badge variant={status === 'COMPLETED' ? 'default' : 'secondary'}>{status}</Badge>
             </p>
           </div>
 
@@ -108,32 +195,51 @@ const Match = () => {
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-teal" /> {isVolunteer ? "Candidate" : "Scribe"} details
+                  <ShieldCheck className="w-5 h-5 text-teal" /> 
+                  {isMatched ? (isVolunteer ? "Candidate" : "Scribe") : "Request"} details
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="flex items-center gap-4">
-                  <img
-                    src={`https://i.pravatar.cc/120?u=${encodeURIComponent(person.name)}`}
-                    alt={`Portrait of ${person.name}`}
-                    className="w-20 h-20 rounded-full object-cover border"
-                    loading="lazy"
-                  />
-                  <div>
-                    <p className="text-xl font-bold">{person.name}</p>
-                    <p className="text-sm text-muted-foreground">{person.role}</p>
-                    <Badge className="mt-2">Trust score {person.score} / 5</Badge>
+                {isMatched ? (
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={`https://i.pravatar.cc/120?u=${encodeURIComponent(counterpartName)}`}
+                      alt={`Portrait of ${counterpartName}`}
+                      className="w-20 h-20 rounded-full object-cover border"
+                      loading="lazy"
+                    />
+                    <div>
+                      <p className="text-xl font-bold">{counterpartName}</p>
+                      <p className="text-sm text-muted-foreground">{isVolunteer ? "Candidate" : "Volunteer"} • {counterpartGender}</p>
+                      <Badge className="mt-2">Verified via DigiLocker</Badge>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+                      <Clock className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold">Matching in progress</p>
+                      <p className="text-sm text-muted-foreground">We are finding a suitable volunteer for you.</p>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={() => navigate('/matching')}>
+                        View matching status
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid sm:grid-cols-2 gap-4 text-sm">
-                  <p className="flex items-center gap-2"><GraduationCap className="w-4 h-4 text-teal" /> {person.detail}</p>
-                  <p className="flex items-center gap-2"><Languages className="w-4 h-4 text-teal" /> {person.languages}</p>
-                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-teal" /> {person.area}</p>
-                  <p className="flex items-center gap-2"><Star className="w-4 h-4 text-teal" /> Verified via DigiLocker</p>
+                  <p className="flex items-center gap-2"><GraduationCap className="w-4 h-4 text-teal" /> {request.examName}</p>
+                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-teal" /> {request.examCenterName || "Exam centre"}</p>
+                  {isMatched && (
+                    <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-teal" /> {counterpartPhone}</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-3 pt-2">
-                  <Button asChild><a href={`tel:${person.phone.replace(/\s/g, "")}`}><Phone className="w-4 h-4 mr-2" />Call</a></Button>
-                  <Button variant="outline" asChild><a href={`mailto:${person.email}`}><Mail className="w-4 h-4 mr-2" />Email</a></Button>
+                  {isMatched && counterpartPhone !== "—" && (
+                    <Button asChild><a href={`tel:${counterpartPhone.replace(/\s/g, "")}`}><Phone className="w-4 h-4 mr-2" />Call</a></Button>
+                  )}
                   <Button variant="outline" asChild><Link to="/emergency"><LifeBuoy className="w-4 h-4 mr-2" />Emergency support</Link></Button>
                 </div>
               </CardContent>
@@ -141,87 +247,74 @@ const Match = () => {
 
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5" /> Exam session (OTP)</CardTitle>
+                <CardTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5" /> Session PINs</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5 text-sm">
-                {!isVolunteer && (
+                {showPins && (
                   <div className="rounded-xl bg-secondary p-4">
-                    <p className="font-medium mb-2">Your OTPs</p>
-                    <p>Start: <span className="font-mono text-lg tracking-widest">{candidateStartOtp}</span></p>
-                    <p>End: <span className="font-mono text-lg tracking-widest">{candidateEndOtp}</span></p>
-                    <p className="text-xs text-muted-foreground mt-2">Share the start OTP before the exam and the end OTP once you finish.</p>
+                    <p className="font-medium mb-2">Your PINs to share</p>
+                    <p>Start: <span className="font-mono text-lg tracking-widest">{request.invigilatorPin}</span></p>
+                    <p>End: <span className="font-mono text-lg tracking-widest">{request.completionPin}</span></p>
+                    <p className="text-xs text-muted-foreground mt-2">Share the start PIN before the exam and the end PIN once you finish.</p>
                   </div>
                 )}
-                {!sessionStarted ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="sotp">Enter start OTP from candidate</Label>
-                    <Input id="sotp" value={startOtp} onChange={(e) => setStartOtp(e.target.value)} placeholder="6-digit OTP" />
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        if (startOtp === candidateStartOtp) { startSession(); toast.success("Session started"); }
-                        else toast.error("Invalid start OTP");
-                      }}
-                    >
-                      Start session
-                    </Button>
-                  </div>
-                ) : !sessionEnded ? (
-                  <div className="space-y-2">
-                    <p className="flex items-center gap-2 text-teal font-medium"><CheckCircle2 className="w-4 h-4" /> Session in progress</p>
-                    <Label htmlFor="eotp">Enter end OTP from candidate</Label>
-                    <Input id="eotp" value={endOtp} onChange={(e) => setEndOtp(e.target.value)} placeholder="6-digit OTP" />
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        if (endOtp === candidateEndOtp) { endSession(); toast.success("Session closed — marked Successful Exam"); }
-                        else toast.error("Invalid end OTP");
-                      }}
-                    >
-                      End session
-                    </Button>
-                  </div>
-                ) : (
+
+                {showPinEntry && (
+                  <>
+                    {status === 'MATCHED' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="sotp">Enter start PIN</Label>
+                        <Input
+                          id="sotp"
+                          value={startPinInput}
+                          onChange={(e) => setStartPinInput(e.target.value)}
+                          placeholder="4‑digit PIN"
+                          maxLength={6}
+                        />
+                        <Button
+                          className="w-full"
+                          onClick={handleStartPinVerify}
+                          disabled={verifyingStart || !startPinInput}
+                        >
+                          {verifyingStart ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          Start Session
+                        </Button>
+                      </div>
+                    )}
+
+                    {status === 'IN_PROGRESS' && (
+                      <div className="space-y-2">
+                        <p className="flex items-center gap-2 text-teal font-medium"><CheckCircle2 className="w-4 h-4" /> Session in progress</p>
+                        <Label htmlFor="eotp">Enter end PIN</Label>
+                        <Input
+                          id="eotp"
+                          value={endPinInput}
+                          onChange={(e) => setEndPinInput(e.target.value)}
+                          placeholder="4‑digit PIN"
+                          maxLength={6}
+                        />
+                        <Button
+                          className="w-full"
+                          onClick={handleEndPinVerify}
+                          disabled={verifyingEnd || !endPinInput}
+                        >
+                          {verifyingEnd ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          End Session
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {status === 'COMPLETED' && (
                   <div className="rounded-xl border border-teal/40 bg-teal/5 p-4">
-                    <p className="font-semibold text-teal flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Successful exam</p>
-                    <p className="text-muted-foreground mt-1">Recorded in both profiles and added to the trust score.</p>
+                    <p className="font-semibold text-teal flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Exam completed</p>
+                    <p className="text-muted-foreground mt-1">Thank you for using Write For Me.</p>
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
-
-          {sessionEnded && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle>Rate your {isVolunteer ? "candidate" : "scribe"}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {reviewed ? (
-                  <p className="text-teal font-medium flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5" /> Thank you — your review is recorded in the history.
-                  </p>
-                ) : (
-                  <>
-                    <div className="grid sm:grid-cols-2 gap-5">
-                      {criteria.map((c) => (
-                        <div key={c} className="flex items-center justify-between rounded-xl border p-4">
-                          <span className="capitalize font-medium">{c}</span>
-                          <Stars value={ratings[c] ?? 0} onChange={(v) => setRatings((r) => ({ ...r, [c]: v }))} />
-                        </div>
-                      ))}
-                    </div>
-                    <Button onClick={submitReview} disabled={criteria.some((c) => !ratings[c])}>
-                      Submit review
-                    </Button>
-                    <p className="text-sm text-muted-foreground">
-                      You can also <Link to="/hall-of-fame" className="text-primary hover:underline">leave a review for the platform</Link>.
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </motion.div>
       </section>
     </Layout>

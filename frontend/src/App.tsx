@@ -24,6 +24,8 @@ import Match from "./pages/Match";
 import Emergency from "./pages/Emergency";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import AuthCallback  from "./pages/AuthCallback";
+
 
 const queryClient = new QueryClient();
 
@@ -51,9 +53,12 @@ const App = () => (
           <Route path="/emergency" element={<Emergency />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/candidate/dashboard" element={<Dashboard />} />
+          <Route path="/volunteer/dashboard" element={<Dashboard />} />
           <Route path="/matching" element={<Matching />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/sitemap" element={<Sitemap />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

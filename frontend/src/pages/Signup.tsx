@@ -16,9 +16,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/store/useUser";
 import { toast } from "sonner";
-import { BadgeCheck, ShieldCheck, Loader2 } from "lucide-react";
+import { ShieldCheck, Loader2 } from "lucide-react";
 
-type Role = "candidate" | "volunteer" | "contributor" | "";
+type Role = "STUDENT" | "VOLUNTEER" | "CONTRIBUTOR";
 
 const disabilityTypes = [
   "Visual Impairment",
@@ -29,63 +29,83 @@ const disabilityTypes = [
   "Other",
 ];
 
-const languages = ["English", "Hindi", "Bengali", "Tamil", "Telugu", "Marathi", "Gujarati", "Malayalam", "Kannada", "Punjabi"];
+const languages = [
+  "English", "Hindi", "Bengali", "Tamil", "Telugu",
+  "Marathi", "Gujarati", "Malayalam", "Kannada", "Punjabi",
+];
 
-const educationLevels = ["10th Pass", "12th Pass", "Graduate", "Post Graduate", "Doctorate"];
-
-function AadhaarVerify() {
-  const { aadhaarVerified, setAadhaarVerified } = useUser();
-  const [loading, setLoading] = useState(false);
-
-  const verify = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setAadhaarVerified(true);
-      toast.success("Aadhaar verified via DigiLocker");
-    }, 1600);
-  };
-
-  return (
-    <div className="rounded-xl border bg-muted/40 p-5">
-      <div className="flex items-start gap-3">
-        <ShieldCheck className="w-6 h-6 text-teal flex-shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="font-semibold">Verify by Aadhaar / DigiLocker</p>
-          <p className="text-sm text-muted-foreground mt-1 mb-4">
-            We fetch your identity and certificates straight from DigiLocker. Your Aadhaar number is never stored.
-          </p>
-          {aadhaarVerified ? (
-            <p className="flex items-center gap-2 text-teal font-medium text-sm">
-              <BadgeCheck className="w-5 h-5" /> Verified via DigiLocker
-            </p>
-          ) : (
-            <Button type="button" variant="outline" onClick={verify} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
-              {loading ? "Connecting to DigiLocker…" : "Verify with DigiLocker"}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+const educationLevels = [
+  "10th Pass", "12th Pass", "Graduate", "Post Graduate", "Doctorate",
+];
 
 const Signup = () => {
-  const [role, setRole] = useState<Role>("");
-  const [name, setName] = useState("");
   const navigate = useNavigate();
-  const { login, aadhaarVerified } = useUser();
+  const { signup } = useUser();
 
-  const needsAadhaar = role === "candidate" || role === "volunteer";
-  const canContinue = role !== "" && (!needsAadhaar || aadhaarVerified);
+  // Step tracking
+  const [step, setStep] = useState(1); // 1 = details, 2 = verifying (waiting)
 
-  const submit = (e: React.FormEvent) => {
+  // Form fields
+  const [role, setRole] = useState<Role>("STUDENT");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [gender, setGender] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [disabilityType, setDisabilityType] = useState("");
+  const [education, setEducation] = useState("");
+  const [preferredLanguage, setPreferredLanguage] = useState("");
+  const [agree, setAgree] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canContinue) return;
-    login(role as Exclude<Role, "">, name.trim() || "Friend");
-    navigate(role === "contributor" ? "/donate" : "/welcome");
+    // Validation
+    if (!name || !email || !password || !confirmPassword || !role) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    if (!agree) {
+      toast.error("You must agree to the terms");
+      return;
+    }
+    // For students and volunteers, additional fields might be required, but we'll let them be optional for now.
+
+    setLoading(true);
+    try {
+      const payload = {
+        name,
+        email,
+        password,
+        phone,
+        role,
+        gender,
+        address,
+        disabilityType,
+        education,
+        preferredLanguage,
+        // Note: DigiLocker verification will be triggered separately.
+      };
+      // Call signup – if DigiLocker required, it will redirect
+      await signup(payload);
+      // If we reach here, it means no redirect (contributor or already verified)
+      // The signup function will handle the redirect or auto-login.
+      // But we need to handle the wait state.
+      setStep(2); // Show "verifying" state
+    } catch (error) {
+      // error already handled in store
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // For DigiLocker callback, we already have the logic in AuthCallback.
 
   return (
     <Layout>
@@ -99,163 +119,208 @@ const Signup = () => {
           <div className="text-center mb-8">
             <span className="section-label mb-4">Get Started</span>
             <h1 className="text-3xl font-display font-bold mt-4">Create Account</h1>
-            <p className="text-muted-foreground mt-2">Join Write For Me as a candidate, volunteer, or contributor.</p>
+            <p className="text-muted-foreground mt-2">
+              {step === 1 ? "Fill in your details to get started." : "Verifying your identity..."}
+            </p>
           </div>
 
-          <form className="space-y-5" onSubmit={submit}>
-            <div>
-              <Label htmlFor="role">I am a</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-                <SelectTrigger id="role"><SelectValue placeholder="Select your role" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="candidate">Candidate</SelectItem>
-                  <SelectItem value="volunteer">Volunteer / Scribe</SelectItem>
-                  <SelectItem value="contributor">Contributor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
+          {step === 1 ? (
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              {/* Role */}
               <div>
-                <Label htmlFor="name">Full Name</Label>
-                <Input id="name" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Your full name" />
-              </div>
-              <div>
-                <Label htmlFor="gender">Gender</Label>
-                <Select>
-                  <SelectTrigger id="gender"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                <Label htmlFor="role">I am a</Label>
+                <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+                  <SelectTrigger id="role">
+                    <SelectValue placeholder="Select your role" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="female">Female</SelectItem>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                    <SelectItem value="prefer-not">Prefer not to say</SelectItem>
+                    <SelectItem value="STUDENT">Candidate (Student)</SelectItem>
+                    <SelectItem value="VOLUNTEER">Volunteer / Scribe</SelectItem>
+                    <SelectItem value="CONTRIBUTOR">Contributor</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            {role === "contributor" && (
+              {/* Name & Email */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="c-phone">Phone</Label>
-                  <Input id="c-phone" type="tel" maxLength={15} placeholder="+91 98765 43210" />
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your full name"
+                    required
+                  />
                 </div>
                 <div>
-                  <Label htmlFor="c-email">Email</Label>
-                  <Input id="c-email" type="email" maxLength={255} placeholder="you@example.com" />
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                  />
                 </div>
               </div>
-            )}
 
-            {role !== "contributor" && role !== "" && (
-              <>
+              {/* Password */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={8}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="confirm">Confirm Password *</Label>
+                  <Input
+                    id="confirm"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Phone & Gender */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="phone">Phone Number</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="gender">Gender</Label>
+                  <Select value={gender} onValueChange={setGender}>
+                    <SelectTrigger id="gender">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FEMALE">Female</SelectItem>
+                      <SelectItem value="MALE">Male</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                      <SelectItem value="PREFER_NOT">Prefer not to say</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Address */}
+              <div>
+                <Label htmlFor="address">Address</Label>
+                <Textarea
+                  id="address"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Street, city, state, pincode"
+                  rows={2}
+                />
+              </div>
+
+              {/* Conditional fields based on role */}
+              {role === "STUDENT" && (
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="dob">Date of Birth</Label>
-                    <Input id="dob" type="date" />
+                    <Label htmlFor="disability">Type of Disability</Label>
+                    <Select value={disabilityType} onValueChange={setDisabilityType}>
+                      <SelectTrigger id="disability">
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {disabilityTypes.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
-                    <Label htmlFor="phone">Email / Phone</Label>
-                    <Input id="phone" maxLength={255} placeholder="you@example.com" />
+                    <Label htmlFor="edu-student">Education</Label>
+                    <Select value={education} onValueChange={setEducation}>
+                      <SelectTrigger id="edu-student">
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {educationLevels.map((e) => (
+                          <SelectItem key={e} value={e}>{e}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-                <div>
-                  <Label htmlFor="address">Address</Label>
-                  <Textarea id="address" maxLength={300} placeholder="Street address, city, state, pincode" />
-                </div>
-                <AadhaarVerify />
-              </>
-            )}
+              )}
 
-            {role === "candidate" && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-5 overflow-hidden">
+              {role === "VOLUNTEER" && (
                 <div>
-                  <Label htmlFor="disability">Type of Disability</Label>
-                  <Select>
-                    <SelectTrigger id="disability"><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <Label htmlFor="edu-volunteer">Highest Education</Label>
+                  <Select value={education} onValueChange={setEducation}>
+                    <SelectTrigger id="edu-volunteer">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
                     <SelectContent>
-                      {disabilityTypes.map((t) => <SelectItem key={t} value={t.toLowerCase()}>{t}</SelectItem>)}
+                      {educationLevels.map((e) => (
+                        <SelectItem key={e} value={e}>{e}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label htmlFor="edu">Educational Qualification</Label>
-                  <Select>
-                    <SelectTrigger id="edu"><SelectValue placeholder="Select qualification" /></SelectTrigger>
-                    <SelectContent>
-                      {educationLevels.map((e) => <SelectItem key={e} value={e.toLowerCase()}>{e}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="pwd-cert">PwD Certificate (auto-fetched from DigiLocker, or upload)</Label>
-                  <Input id="pwd-cert" type="file" />
-                </div>
-                <div>
-                  <Label htmlFor="preferred-lang">Preferred Language</Label>
-                  <Select>
-                    <SelectTrigger id="preferred-lang"><SelectValue placeholder="Select language" /></SelectTrigger>
-                    <SelectContent>
-                      {languages.map((l) => <SelectItem key={l} value={l.toLowerCase()}>{l}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </motion.div>
-            )}
+              )}
 
-            {role === "volunteer" && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-5 overflow-hidden">
-                <div>
-                  <Label htmlFor="vol-edu">Educational Qualification</Label>
-                  <Select>
-                    <SelectTrigger id="vol-edu"><SelectValue placeholder="Select qualification" /></SelectTrigger>
-                    <SelectContent>
-                      {educationLevels.map((e) => <SelectItem key={e} value={e.toLowerCase()}>{e}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Languages Known</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {languages.slice(0, 6).map((l) => (
-                      <div key={l} className="flex items-center gap-2">
-                        <Checkbox id={`lang-${l}`} />
-                        <Label htmlFor={`lang-${l}`} className="font-normal text-sm">{l}</Label>
-                      </div>
+              {/* Language (for all) */}
+              <div>
+                <Label htmlFor="lang">Preferred Language</Label>
+                <Select value={preferredLanguage} onValueChange={setPreferredLanguage}>
+                  <SelectTrigger id="lang">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {languages.map((l) => (
+                      <SelectItem key={l} value={l}>{l}</SelectItem>
                     ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" placeholder="••••••••" />
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <Label htmlFor="confirm">Confirm Password</Label>
-                <Input id="confirm" type="password" placeholder="••••••••" />
+
+              {/* Terms */}
+              <div className="flex items-start gap-2">
+                <Checkbox id="terms" checked={agree} onCheckedChange={(c) => setAgree(!!c)} />
+                <Label htmlFor="terms" className="font-normal text-sm leading-snug">
+                  I agree to the code of conduct and understand that my information will be verified.
+                </Label>
               </div>
-            </div>
 
-            <div className="flex items-start gap-2">
-              <Checkbox id="terms" />
-              <Label htmlFor="terms" className="font-normal text-sm leading-snug">
-                I agree to the code of conduct and understand that my information will be verified for safety.
-              </Label>
-            </div>
-
-            {needsAadhaar && !aadhaarVerified && (
-              <p className="text-sm text-muted-foreground">
-                Aadhaar / DigiLocker verification is required before you can continue.
+              <Button className="w-full" size="lg" type="submit" disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Continue
+              </Button>
+            </form>
+          ) : (
+            // Step 2: Waiting for verification (DigiLocker)
+            <div className="text-center py-12">
+              <Loader2 className="w-12 h-12 animate-spin text-teal mx-auto" />
+              <p className="mt-4 text-muted-foreground">
+                Redirecting to DigiLocker for verification...
               </p>
-            )}
-
-            <Button className="w-full" size="lg" type="submit" disabled={!canContinue}>
-              Continue
-            </Button>
-          </form>
+              <p className="text-sm text-muted-foreground">
+                If you are not redirected, <Button variant="link" onClick={() => window.location.reload()}>click here</Button>.
+              </p>
+            </div>
+          )}
 
           <p className="text-center mt-6 text-sm text-muted-foreground">
             Already have an account?{" "}

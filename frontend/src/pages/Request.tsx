@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -7,44 +7,83 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useUser, isFullyVerified } from "@/store/useUser";
+import { useUser } from "@/store/useUser";
 import { toast } from "sonner";
-import { Lock, Upload, PenLine, Bus, Users } from "lucide-react";
-
-type Need = "scribe" | "transport" | "both";
+import { Loader2, Upload, AlertCircle } from "lucide-react";
+import { createRequest, uploadAdmitCard } from "@/lib/api";
 
 const Request = () => {
   const navigate = useNavigate();
-  const state = useUser();
-  const { role, setRequest } = state;
-  const verified = isFullyVerified(state);
-  const isVolunteer = role === "volunteer";
+  const { user, isFullyVerified } = useUser();
+  const isVolunteer = user?.role === "VOLUNTEER";
 
-  const [need, setNeed] = useState<Need>(isVolunteer ? "scribe" : "both");
   const [examName, setExamName] = useState("");
+  const [advtNumber, setAdvtNumber] = useState("");
   const [examDate, setExamDate] = useState("");
-  const [city, setCity] = useState("");
-  const [admitCardName, setAdmitCardName] = useState<string | null>(null);
+  const [examCenterName, setExamCenterName] = useState("");
+  const [examCenterLat, setExamCenterLat] = useState("");
+  const [examCenterLng, setExamCenterLng] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState(120);
+  const [genderPref, setGenderPref] = useState("ANY");
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [admitCardFile, setAdmitCardFile] = useState<File | null>(null);
+  const [agree, setAgree] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const options: { key: Need; icon: typeof PenLine; title: string; desc: string }[] = isVolunteer
-    ? [
-        { key: "scribe", icon: PenLine, title: "Scribe only", desc: "Write the paper as dictated by the candidate." },
-        { key: "transport", icon: Bus, title: "Transport only", desc: "Drive or accompany the candidate to the centre." },
-        { key: "both", icon: Users, title: "Scribe + transport", desc: "Offer both services for the same exam." },
-      ]
-    : [
-        { key: "scribe", icon: PenLine, title: "Scribe only", desc: "I need someone to write my paper." },
-        { key: "transport", icon: Bus, title: "Transport only", desc: "I can write, I need help reaching the centre." },
-        { key: "both", icon: Users, title: "Scribe + transport", desc: "I need both for this exam." },
-      ];
+  // Handle OCR
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAdmitCardFile(file);
+    try {
+      setOcrLoading(true);
+      const result = await uploadAdmitCard(file);
+      const data = result.data.extractedData;
+      if (data.examName) setExamName(data.examName);
+      if (data.advtNumber) setAdvtNumber(data.advtNumber);
+      if (data.examDate) setExamDate(new Date(data.examDate).toISOString().split('T')[0]);
+      if (data.examCenterName) setExamCenterName(data.examCenterName);
+      if (data.durationMinutes) setDurationMinutes(data.durationMinutes);
+      toast.success("Admit card parsed! Fields auto‑filled.");
+    } catch (error) {
+      toast.error("Failed to parse admit card. Please fill manually.");
+    } finally {
+      setOcrLoading(false);
+    }
+  };
 
-  const canSubmit =
-    verified && examName && examDate && city && (isVolunteer || need === "transport" || admitCardName);
-
-  const submit = () => {
-    setRequest({ needs: need, examName, examDate, city, admitCardName });
-    toast.success(isVolunteer ? "Availability published" : "Request submitted");
-    navigate("/waiting");
+  const handleSubmit = async () => {
+    if (!examName || !examDate || !examCenterName) {
+      toast.error("Please fill all required fields.");
+      return;
+    }
+    if (!agree) {
+      toast.error("Please agree to the terms.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = {
+        examName,
+        advtNumber: advtNumber || null,
+        examDate: new Date(examDate).toISOString(),
+        durationMinutes,
+        genderPref,
+        examCenterName,
+        examCenterLat: parseFloat(examCenterLat) || 0,
+        examCenterLng: parseFloat(examCenterLng) || 0,
+        isEmergency,
+      };
+      const response = await createRequest(payload);
+      const requestId = response.data.id;
+      toast.success("Request created!");
+      navigate(`/waiting?requestId=${requestId}`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || "Failed to create request");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -57,95 +96,172 @@ const Request = () => {
               {isVolunteer ? "Offer to be a scribe" : "Request a scribe"}
             </h1>
             <p className="text-muted-foreground mt-3">
-              {isVolunteer
-                ? "Tell us what you can offer and where. We match you anonymously with a nearby candidate."
-                : "Choose what you need, add your exam details, and we will find a verified match nearby."}
+              Fill in your exam details. We’ll match you with a verified scribe nearby.
             </p>
           </div>
 
-          {!verified && (
-            <Card className="mb-8 border-destructive/40">
-              <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4 py-6">
-                <Lock className="w-6 h-6 text-destructive flex-shrink-0" />
-                <p className="flex-1 text-sm">
-                  You are not fully verified yet. Complete the orientation
-                  {isVolunteer ? " and the questionnaire" : ""} before you can{" "}
-                  {isVolunteer ? "accept requests" : "request a scribe"}.
-                </p>
-                <Button asChild>
-                  <Link to="/welcome">Complete orientation</Link>
-                </Button>
-              </CardContent>
-            </Card>
+          {/* Optional verification banner (non‑blocking) */}
+          {!isFullyVerified && (
+            <div className="mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium">Verification pending</p>
+                <p className="text-yellow-700">You can still submit a request, but you’ll be asked to complete your profile later.</p>
+              </div>
+            </div>
           )}
-
-          <div className="grid sm:grid-cols-3 gap-4 mb-8">
-            {options.map((o) => (
-              <button
-                key={o.key}
-                type="button"
-                onClick={() => setNeed(o.key)}
-                disabled={!verified}
-                className={`text-left rounded-2xl border p-5 transition-all disabled:opacity-50 ${
-                  need === o.key ? "border-primary bg-secondary shadow-sm" : "bg-card hover:-translate-y-0.5 hover:shadow"
-                }`}
-              >
-                <o.icon className="w-6 h-6 text-teal mb-3" />
-                <p className="font-bold mb-1">{o.title}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed">{o.desc}</p>
-              </button>
-            ))}
-          </div>
 
           <Card>
             <CardHeader>
               <CardTitle>Exam details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
+              {/* Admit card upload */}
+              <div>
+                <Label htmlFor="admit">Upload Admit Card (optional – auto‑fill)</Label>
+                <div className="mt-2 flex items-center gap-3">
+                  <Input
+                    id="admit"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleFileChange}
+                    disabled={ocrLoading}
+                  />
+                  {ocrLoading && <Loader2 className="h-5 w-5 animate-spin text-teal" />}
+                </div>
+                {admitCardFile && (
+                  <p className="text-sm text-teal mt-2 flex items-center gap-2">
+                    <Upload className="w-4 h-4" /> {admitCardFile.name} uploaded
+                  </p>
+                )}
+              </div>
+
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="exam">Exam name</Label>
-                  <Input id="exam" value={examName} disabled={!verified} onChange={(e) => setExamName(e.target.value)} placeholder="e.g. SSC CGL Tier I" />
+                  <Label htmlFor="examName">Exam name *</Label>
+                  <Input
+                    id="examName"
+                    value={examName}
+                    onChange={(e) => setExamName(e.target.value)}
+                    placeholder="e.g. SSC CGL Tier I"
+                  />
                 </div>
                 <div>
-                  <Label htmlFor="date">Exam date</Label>
-                  <Input id="date" type="date" value={examDate} disabled={!verified} onChange={(e) => setExamDate(e.target.value)} />
+                  <Label htmlFor="advtNumber">Advertisement number</Label>
+                  <Input
+                    id="advtNumber"
+                    value={advtNumber}
+                    onChange={(e) => setAdvtNumber(e.target.value)}
+                    placeholder="e.g. ADVT-2026-001"
+                  />
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="city">City / centre area</Label>
-                <Input id="city" value={city} disabled={!verified} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Pune, Kothrud" />
               </div>
 
-              {!isVolunteer && need !== "transport" && (
+              <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="admit">Admit card upload (for exam detail cross-checking)</Label>
-                  <div className="mt-2 flex items-center gap-3">
-                    <Input
-                      id="admit"
-                      type="file"
-                      accept="image/*,application/pdf"
-                      disabled={!verified}
-                      onChange={(e) => setAdmitCardName(e.target.files?.[0]?.name ?? null)}
-                    />
-                  </div>
-                  {admitCardName && (
-                    <p className="text-sm text-teal mt-2 flex items-center gap-2">
-                      <Upload className="w-4 h-4" /> {admitCardName} attached
-                    </p>
-                  )}
+                  <Label htmlFor="examDate">Exam date *</Label>
+                  <Input
+                    id="examDate"
+                    type="date"
+                    value={examDate}
+                    onChange={(e) => setExamDate(e.target.value)}
+                  />
                 </div>
-              )}
+                <div>
+                  <Label htmlFor="duration">Duration (minutes)</Label>
+                  <Input
+                    id="duration"
+                    type="number"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 120)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="centerName">Exam center name *</Label>
+                <Input
+                  id="centerName"
+                  value={examCenterName}
+                  onChange={(e) => setExamCenterName(e.target.value)}
+                  placeholder="e.g. Govt. Polytechnic, Mumbai"
+                />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="lat">Latitude (optional)</Label>
+                  <Input
+                    id="lat"
+                    type="number"
+                    step="any"
+                    value={examCenterLat}
+                    onChange={(e) => setExamCenterLat(e.target.value)}
+                    placeholder="e.g. 28.6139"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lng">Longitude (optional)</Label>
+                  <Input
+                    id="lng"
+                    type="number"
+                    step="any"
+                    value={examCenterLng}
+                    onChange={(e) => setExamCenterLng(e.target.value)}
+                    placeholder="e.g. 77.2090"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="genderPref">Preferred scribe gender</Label>
+                <select
+                  id="genderPref"
+                  value={genderPref}
+                  onChange={(e) => setGenderPref(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2"
+                >
+                  <option value="ANY">Any</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="emergency"
+                  checked={isEmergency}
+                  onCheckedChange={(checked) => setIsEmergency(!!checked)}
+                />
+                <Label htmlFor="emergency" className="font-normal text-sm">
+                  Mark as emergency (fast‑track matching)
+                </Label>
+              </div>
 
               <div className="flex items-start gap-2">
-                <Checkbox id="agree" disabled={!verified} />
+                <Checkbox
+                  id="agree"
+                  checked={agree}
+                  onCheckedChange={(checked) => setAgree(!!checked)}
+                />
                 <Label htmlFor="agree" className="font-normal text-sm leading-snug">
                   I confirm these details match my admit card and I will follow the code of conduct.
                 </Label>
               </div>
 
-              <Button size="lg" className="w-full" disabled={!canSubmit} onClick={submit}>
-                {isVolunteer ? "Publish availability" : "Find me a match"}
+              <Button
+                size="lg"
+                className="w-full"
+                disabled={submitting || !agree || !examName || !examDate || !examCenterName}
+                onClick={handleSubmit}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
+                  </>
+                ) : (
+                  isVolunteer ? "Publish availability" : "Find me a match"
+                )}
               </Button>
             </CardContent>
           </Card>

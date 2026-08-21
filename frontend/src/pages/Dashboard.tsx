@@ -1,136 +1,243 @@
 import { Layout } from "@/components/Layout";
 import { motion } from "framer-motion";
-import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { CalendarDays, Clock, History, Star, Bell, FileCheck, MapPin, Briefcase, Droplets } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Badge } from "@/components/ui/badge";
+import { useState, useEffect } from "react";
+import { useUser } from "@/store/useUser";
+import { fetchStudentDashboard, fetchVolunteerDashboard } from "@/lib/api";
+import { 
+  CalendarDays, Clock, History, Star, Bell, FileCheck, 
+  MapPin, Briefcase, Droplets, Award, CheckCircle, 
+  TrendingUp, AlertCircle, Loader2, UserCheck
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
+// ---------- Helper Components ----------
+const StatCard = ({ icon: Icon, label, value }: any) => (
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+        <Icon className="w-4 h-4" /> {label}
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      <p className="text-2xl font-bold">{value}</p>
+    </CardContent>
+  </Card>
+);
+
+const EventItem = ({ title, date, status }: any) => (
+  <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+    <div>
+      <p className="font-semibold">{title}</p>
+      <p className="text-sm text-muted-foreground">{date}</p>
+    </div>
+    <Badge variant="secondary">{status}</Badge>
+  </div>
+);
+
+// ---------- Main Dashboard ----------
 const Dashboard = () => {
+  const { user, token } = useUser();
+  const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  return (
-    <Layout>
-      <section className="py-8 md:py-12 container-wide">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-            <div>
-              <span className="section-label mb-2">Dashboard</span>
-              <h1 className="text-3xl md:text-4xl font-display font-bold mt-2">
-                Welcome back, Aarav
-              </h1>
-            </div>
-            <Button>Request a Scribe</Button>
-          </div>
+  const role = user?.role;
 
-          <div className="grid lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="grid sm:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="w-4 h-4" /> Upcoming
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">2 Exams</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Star className="w-4 h-4" /> Trust Score
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">4.8 / 5</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <History className="w-4 h-4" /> History
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">12 Sessions</p>
-                  </CardContent>
-                </Card>
+  useEffect(() => {
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        let result;
+        if (role === 'STUDENT') {
+          result = await fetchStudentDashboard();
+        } else if (role === 'VOLUNTEER') {
+          result = await fetchVolunteerDashboard();
+        } else {
+          toast.error('Unknown user role');
+          return;
+        }
+        setData(result);
+      } catch (err: any) {
+        console.error('Dashboard fetch error:', err);
+        const msg = err.response?.data?.error || err.message || 'Failed to load dashboard';
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [role, token, navigate]);
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-teal" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <p className="text-red-500 font-semibold">Error loading dashboard</p>
+          <p className="text-muted-foreground text-sm">{error}</p>
+          <Button onClick={() => window.location.reload()} className="mt-4">Retry</Button>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No dashboard data available.</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  // ---------- Student View ----------
+  if (role === 'STUDENT') {
+    const studentData = data;
+    const profile = studentData?.profile || { name: 'Student', gender: '—' };
+    const upcoming = studentData?.upcomingExams || [];
+    const stats = studentData?.stats || { averageRating: 0, completedSessions: 0 };
+
+    return (
+      <Layout>
+        <section className="py-8 md:py-12 container-wide">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <div>
+                <span className="section-label mb-2">Dashboard</span>
+                <h1 className="text-3xl md:text-4xl font-display font-bold mt-2">
+                  Welcome back, {profile.name}
+                </h1>
+                <p className="text-muted-foreground">Candidate • {profile.gender}</p>
               </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5" /> Upcoming Events
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {[
-                    { title: "UPSC Prelims", date: "Aug 12, 2026", status: "Scribe assigned" },
-                    { title: "SSC CGL Tier 1", date: "Aug 25, 2026", status: "Transport requested" },
-                  ].map((event, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                      <div>
-                        <p className="font-semibold">{event.title}</p>
-                        <p className="text-sm text-muted-foreground">{event.date}</p>
-                      </div>
-                      <span className="text-xs px-2 py-1 rounded-full bg-teal/10 text-teal font-medium">
-                        {event.status}
-                      </span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card className="border-l-4 border-l-coral">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-coral">
-                    <Bell className="w-5 h-5" /> Exam Day Reminder
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    Your UPSC Prelims is tomorrow. Please carry the following:
-                  </p>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {[
-                      { icon: FileCheck, text: "Admit card & valid ID" },
-                      { icon: Briefcase, text: "Stationery (pen, pencil, eraser)" },
-                      { icon: Droplets, text: "Water bottle & snacks" },
-                      { icon: MapPin, text: "Reach center 1 hour early" },
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        <item.icon className="w-4 h-4 text-teal" />
-                        <span>{item.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <Button onClick={() => navigate('/request')}>Request a Scribe</Button>
             </div>
 
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle>Agenda</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={setDate}
-                  className="rounded-md border"
-                />
+            <div className="grid sm:grid-cols-3 gap-4 mb-6">
+              <StatCard icon={Clock} label="Upcoming Exams" value={upcoming.length} />
+              <StatCard icon={Star} label="Trust Score" value={stats.averageRating.toFixed(1)} />
+              <StatCard icon={History} label="Sessions Completed" value={stats.completedSessions || 0} />
+            </div>
+
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="w-5 h-5" /> Upcoming Exams</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {upcoming.length > 0 ? (
+                  upcoming.map((exam: any) => (
+                    <EventItem key={exam.id} title={exam.examName} date={new Date(exam.examDate).toLocaleDateString()} status={exam.status} />
+                  ))
+                ) : (
+                  <p className="text-muted-foreground text-sm">No upcoming exams.</p>
+                )}
               </CardContent>
             </Card>
-          </div>
-        </motion.div>
-      </section>
-    </Layout>
-  );
+          </motion.div>
+        </section>
+      </Layout>
+    );
+  }
+
+  // ---------- Volunteer View ----------
+  if (role === 'VOLUNTEER') {
+    const volunteerData = data;
+    const profile = volunteerData?.profile || { name: 'Volunteer', gender: '—' };
+    const allAssignments = volunteerData?.upcomingAssignments || [];
+    const activeAssignments = allAssignments.filter(
+      (exam: any) => ['MATCHED', 'IN_PERSON_VERIFIED', 'IN_PROGRESS'].includes(exam.status)
+    );
+    const completedCount = volunteerData?.stats?.completedExams || 0;
+    const xpPoints = volunteerData?.stats?.xpPoints || 0;
+
+    return (
+      <Layout>
+        <section className="py-8 md:py-12 container-wide">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <div>
+                <span className="section-label mb-2">Dashboard</span>
+                <h1 className="text-3xl md:text-4xl font-display font-bold mt-2">
+                  Welcome back, {profile.name}
+                </h1>
+                <p className="text-muted-foreground">Volunteer • {profile.gender}</p>
+              </div>
+              <Button variant="outline" onClick={() => navigate('/profile')}>
+                <UserCheck className="w-4 h-4 mr-2" /> Manage Availability
+              </Button>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4 mb-6">
+              <StatCard icon={TrendingUp} label="Active Assignments" value={activeAssignments.length} />
+              <StatCard icon={Award} label="XP Points" value={xpPoints} />
+              <StatCard icon={CheckCircle} label="Completed" value={completedCount} />
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><CalendarDays className="w-5 h-5" /> Your Assignments</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {allAssignments.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No assignments yet.</p>
+                ) : (
+                  allAssignments.map((exam: any) => (
+                    <div
+                      key={exam.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => navigate(`/match?requestId=${exam.id}`)}
+                    >
+                      <div>
+                        <p className="font-semibold">{exam.examName}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(exam.examDate).toLocaleDateString()}</p>
+                      </div>
+                      <Badge variant={exam.status === 'COMPLETED' ? 'default' : 'secondary'}>
+                        {exam.status}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        </section>
+      </Layout>
+    );
+  }
+
+  return null;
 };
 
 export default Dashboard;

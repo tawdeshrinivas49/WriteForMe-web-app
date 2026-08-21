@@ -47,7 +47,7 @@ class RequestsService {
         isFromMasterRegistry: Boolean(data.masterExamId),
         invigilatorPin,
         completionPin,
-        status: 'PENDING',
+        status: 'CREATED',
       },
     });
 
