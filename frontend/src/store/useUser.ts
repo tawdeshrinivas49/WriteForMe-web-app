@@ -1,76 +1,116 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type UserRole = "STUDENT" | "VOLUNTEER" | null;
+export type UserRole = "candidate" | "volunteer" | "contributor" | "admin" | null;
 
-export interface User {
+export interface SessionReview {
   id: string;
-  name: string;
-  phone: string;
-  role: UserRole;
-  gender: string;
-  candidateProfile?: any;
-  volunteerProfile?: any;
+  date: string;
+  exam: string;
+  counterpart: string;
+  speed: number;
+  patience: number;
+  neatness: number;
+  politeness: number;
+  status: "completed" | "cancelled";
+}
+
+export interface MatchRequest {
+  needs: "scribe" | "transport" | "both";
+  examName: string;
+  examDate: string;
+  city: string;
+  admitCardName: string | null;
 }
 
 interface UserState {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
+  role: UserRole;
+  name: string;
   aadhaarVerified: boolean;
-  // Additional fields for verification flow
   videoCompleted: boolean;
   quizPassed: boolean;
-  setUser: (user: User, token: string) => void;
+  request: MatchRequest | null;
+  matchFound: boolean;
+  sessionStarted: boolean;
+  sessionEnded: boolean;
+  history: SessionReview[];
+  login: (role: Exclude<UserRole, null>, name: string) => void;
   logout: () => void;
   setAadhaarVerified: (v: boolean) => void;
   completeVideo: () => void;
   passQuiz: () => void;
+  setRequest: (r: MatchRequest) => void;
+  clearRequest: () => void;
+  setMatchFound: (v: boolean) => void;
+  startSession: () => void;
+  endSession: () => void;
+  addHistory: (h: SessionReview) => void;
 }
+
+const seedHistory: SessionReview[] = [
+  {
+    id: "s-1",
+    date: "2026-05-18",
+    exam: "SSC CGL Tier I",
+    counterpart: "Meera Iyer",
+    speed: 5,
+    patience: 5,
+    neatness: 4,
+    politeness: 5,
+    status: "completed",
+  },
+  {
+    id: "s-2",
+    date: "2026-03-02",
+    exam: "State PSC Prelims",
+    counterpart: "Arjun Rao",
+    speed: 4,
+    patience: 5,
+    neatness: 5,
+    politeness: 5,
+    status: "completed",
+  },
+];
 
 export const useUser = create<UserState>()(
   persist(
     (set) => ({
-      user: null,
-      token: null,
-      isAuthenticated: false,
+      role: null,
+      name: "",
       aadhaarVerified: false,
       videoCompleted: false,
       quizPassed: false,
-      setUser: (user, token) => {
-        localStorage.setItem('jwtToken', token);
-        localStorage.setItem('user_data', JSON.stringify(user));
-        set({ user, token, isAuthenticated: true });
-      },
-      logout: () => {
-        localStorage.removeItem('jwtToken');
-        localStorage.removeItem('user_data');
-        set({ user: null, token: null, isAuthenticated: false });
-      },
-      setAadhaarVerified: (v) => set({ aadhaarVerified: v }),
+      request: null,
+      matchFound: false,
+      sessionStarted: false,
+      sessionEnded: false,
+      history: seedHistory,
+      login: (role, name) => set({ role, name }),
+      logout: () =>
+        set({
+          role: null,
+          name: "",
+          aadhaarVerified: false,
+          videoCompleted: false,
+          quizPassed: false,
+          request: null,
+          matchFound: false,
+          sessionStarted: false,
+          sessionEnded: false,
+        }),
+      setAadhaarVerified: (aadhaarVerified) => set({ aadhaarVerified }),
       completeVideo: () => set({ videoCompleted: true }),
       passQuiz: () => set({ quizPassed: true }),
+      setRequest: (request) => set({ request, matchFound: false }),
+      clearRequest: () => set({ request: null, matchFound: false, sessionStarted: false, sessionEnded: false }),
+      setMatchFound: (matchFound) => set({ matchFound }),
+      startSession: () => set({ sessionStarted: true }),
+      endSession: () => set({ sessionEnded: true }),
+      addHistory: (h) => set((s) => ({ history: [h, ...s.history] })),
     }),
     { name: "wfm-user" }
   )
 );
 
-// Helper to retrieve stored user/token
-export const getStoredUser = (): User | null => {
-  const data = localStorage.getItem('user_data');
-  return data ? JSON.parse(data) : null;
-};
-
-export const getStoredToken = (): string | null => {
-  return localStorage.getItem('jwtToken');
-};
-
-// ✅ Re‑export the verification function used in Request.tsx
-export const isFullyVerified = (state: UserState): boolean => {
-  // For volunteers: must have completed video and quiz
-  if (state.user?.role === 'VOLUNTEER') {
-    return state.videoCompleted && state.quizPassed;
-  }
-  // For students/candidates: only video completion required (or aadhaar)
-  return state.videoCompleted || state.aadhaarVerified;
-};
+export const isFullyVerified = (s: UserState) =>
+  s.role === "volunteer" ? s.videoCompleted && s.quizPassed : s.videoCompleted;
