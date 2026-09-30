@@ -1,0 +1,9 @@
+{
+  "name": "@wfm/admin-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Write For Me Admin Portal Frontend",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts"
+}

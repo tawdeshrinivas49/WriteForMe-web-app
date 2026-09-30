@@ -79,7 +79,7 @@ export const Footer = () => {
 
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-white/50">
-            © {new Date().getFullYear()} Write For Me. All rights reserved<Link to="/admin" className="hover:text-white/60 transition-colors ml-0.5">.</Link>
+            © {new Date().getFullYear()} Write For Me. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             <span className="text-sm text-white/50 hidden md:inline">Accessibility:</span>

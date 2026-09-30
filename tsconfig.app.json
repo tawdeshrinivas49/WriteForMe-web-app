@@ -26,11 +26,15 @@
     "paths": {
       "@/*": [
         "./frontend/src/*"
+      ],
+      "@admin/*": [
+        "./admin/admin frontend/src/*"
       ]
     }
   },
   "include": [
     "frontend/src",
+    "admin/admin frontend/src",
     "src"
   ]
 }

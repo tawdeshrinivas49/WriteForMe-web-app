@@ -12,6 +12,9 @@
     "paths": {
       "@/*": [
         "./frontend/src/*"
+      ],
+      "@admin/*": [
+        "./admin/admin frontend/src/*"
       ]
     },
     "noImplicitAny": false,
