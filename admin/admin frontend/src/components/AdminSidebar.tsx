@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Ticket, ShieldCheck, AlertTriangle, Users, HeartHandshake,
   CreditCard, Gift, Trophy, MessageSquare, Megaphone, ScrollText, UserCog, Building2,
-  GraduationCap, Settings,
+  GraduationCap, Settings, ClipboardCheck,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -17,6 +17,7 @@ const groups = [
       { title: "Candidates", url: "/admin/candidates", icon: Users },
       { title: "Volunteers", url: "/admin/volunteers", icon: HeartHandshake },
       { title: "NGOs", url: "/admin/ngos", icon: Building2 },
+      { title: "Org Approvals", url: "/admin/org-approvals", icon: ClipboardCheck },
     ],
   },
   {

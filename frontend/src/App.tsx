@@ -23,6 +23,8 @@ import Match from "./pages/Match";
 import Emergency from "./pages/Emergency";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import OrgRegister from "./pages/OrgRegister";
+import OrgDashboard from "./pages/OrgDashboard";
 import { AdminRoutes } from "@admin/AdminRoutes";
 
 const queryClient = new QueryClient();
@@ -53,6 +55,8 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/matching" element={<Matching />} />
           <Route path="/admin/*" element={<AdminRoutes />} />
+          <Route path="/org/register" element={<OrgRegister />} />
+          <Route path="/org/dashboard" element={<OrgDashboard />} />
           <Route path="/sitemap" element={<Sitemap />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

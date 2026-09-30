@@ -20,6 +20,7 @@ import SuperDashboard from "./pages/super/Dashboard";
 import SuperCustomExams from "./pages/super/CustomExams";
 import SuperLegacyApprovals from "./pages/super/LegacyApprovals";
 import SuperSettings from "./pages/super/Settings";
+import OrgApprovals from "./pages/OrgApprovals";
 
 export function AdminRoutes() {
   return (
@@ -30,6 +31,7 @@ export function AdminRoutes() {
         <Route path="candidates" element={<AdminPeople kind="candidates" />} />
         <Route path="volunteers" element={<AdminPeople kind="volunteers" />} />
         <Route path="ngos" element={<AdminNgos />} />
+        <Route path="org-approvals" element={<OrgApprovals />} />
         <Route path="tickets" element={<AdminTickets />} />
         <Route path="verifications" element={<AdminVerifications />} />
         <Route path="flags" element={<AdminFlags />} />

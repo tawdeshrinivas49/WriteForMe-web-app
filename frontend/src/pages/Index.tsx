@@ -27,6 +27,7 @@ const kpis = [
   { value: 8700, suffix: "+", label: "Verified Volunteers" },
   { value: 98, suffix: "%", label: "Match Satisfaction" },
   { value: 32, suffix: "", label: "States Covered" },
+  { value: 6, suffix: "+", label: "Partner Organisations" },
 ];
 
 const steps = [
@@ -234,7 +235,7 @@ const Index = () => {
       {/* KPIs — animated counters */}
       <section className="py-16 md:py-24 bg-secondary/30 pattern-dots section-divider">
         <div className="container-wide">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {kpis.map((kpi, i) => (
               <motion.div
                 key={kpi.label}

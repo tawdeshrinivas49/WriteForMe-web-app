@@ -18,6 +18,7 @@ import { AccessibilityToolbar } from "@/components/AccessibilityToolbar";
 const searchIndex = [
   { label: "Dashboard", to: "/admin" }, { label: "Candidates", to: "/admin/candidates" },
   { label: "Volunteers", to: "/admin/volunteers" }, { label: "NGOs connected", to: "/admin/ngos" },
+  { label: "Org Approvals", to: "/admin/org-approvals" },
   { label: "Support tickets", to: "/admin/tickets" }, { label: "Manual verification", to: "/admin/verifications" },
   { label: "Suspicious flags", to: "/admin/flags" }, { label: "Reviews moderation", to: "/admin/reviews" },
   { label: "Exam payments", to: "/admin/payments" }, { label: "Donations & receipts", to: "/admin/donations" },
